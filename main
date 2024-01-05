@@ -1,0 +1,236 @@
+import sys
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QPushButton, QVBoxLayout, QWidget
+from PyQt5.QtCore import Qt
+from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+import random
+import time
+import requests
+from PyQt5.QtGui import QPixmap
+from PyQt5.QtWidgets import QRadioButton
+import sqlite3
+
+r_url = (
+    "https://www.kinopoisk.ru/lists/movies/top500/?utm_referrer=www.google.com",
+    "https://www.kinopoisk.ru/lists/movies/top500/?page=2",
+    "https://www.kinopoisk.ru/lists/movies/top500/?page=3",
+    "https://www.kinopoisk.ru/lists/movies/top500/?page=4",
+    "https://www.kinopoisk.ru/lists/movies/popular-films/",
+    "https://www.kinopoisk.ru/lists/movies/popular-films/?page=2",
+    "https://www.kinopoisk.ru/lists/movies/popular-films/?page=3"
+)
+
+class DatabaseManager:
+    def __init__(self, db_file="movies.db"):
+        self.conn = sqlite3.connect(db_file)
+        self.create_table()
+
+    def create_table(self):
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS movies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT,
+                poster_url TEXT
+            )
+        ''')
+        self.conn.commit()
+
+    def insert_movie(self, title, poster_url):
+        cursor = self.conn.cursor()
+        cursor.execute('INSERT INTO movies (title, poster_url) VALUES (?, ?)', (title, poster_url))
+        self.conn.commit()
+
+    def get_all_movies(self):
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT title, poster_url FROM movies')
+        return cursor.fetchall()
+
+class MovieScraperApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.db_manager = DatabaseManager()
+        self.initUI()
+
+
+    def initUI(self):
+        self.setWindowTitle('Рандомайзер фильмов')
+        self.central_widget = QWidget(self)
+        self.setCentralWidget(self.central_widget)
+        self.layout = QVBoxLayout()
+        self.status_label = QLabel('Нажмите кнопку, чтобы перенести фильмы в базу данных')
+        self.layout.addWidget(self.status_label)
+        self.scrape_button = QPushButton('Перенос фильмов')
+        self.scrape_button.clicked.connect(self.scrape_movies)
+        self.layout.addWidget(self.scrape_button)
+        self.pick_random_button = QPushButton('Выбрать случайный фильм')
+        self.pick_random_button.clicked.connect(self.pick_random_movie)
+        self.layout.addWidget(self.pick_random_button)
+        self.poster_label = QLabel(self)
+        self.layout.addWidget(self.poster_label)
+        self.central_widget.setLayout(self.layout)
+        self.movies = []
+        self.light_theme_radio = QRadioButton('Светлая тема', self)
+        self.dark_theme_radio = QRadioButton('Темная тема', self)
+        self.light_theme_radio.setChecked(True)  # Устанавливаем светлую тему по умолчанию
+        self.light_theme_radio.toggled.connect(self.toggle_theme)
+        self.dark_theme_radio.toggled.connect(self.toggle_theme)
+
+        self.layout.addWidget(self.light_theme_radio)
+        self.layout.addWidget(self.dark_theme_radio)
+
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #f0f0f0;
+            }
+
+            QLabel {
+                font-size: 16px;
+                color: #333;
+            }
+
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-size: 14px;
+                border: none;
+                padding: 10px 15px;
+                margin-top: 10px;
+            }
+        """)
+
+    def toggle_theme(self):
+        if self.light_theme_radio.isChecked():
+            self.set_light_theme()
+        elif self.dark_theme_radio.isChecked():
+            self.set_dark_theme()
+
+    def set_light_theme(self):
+        self.setStyleSheet("""
+              QMainWindow {
+                  background-color: #f0f0f0;
+              }
+
+              QLabel {
+                  font-size: 16px;
+                  color: #333;
+              }
+
+              QPushButton {
+                  background-color: #4CAF50;
+                  color: white;
+                  font-size: 14px;
+                  border: none;
+                  padding: 10px 15px;
+                  margin-top: 10px;
+              }
+              """)
+
+    def set_dark_theme(self):
+        self.setStyleSheet("""
+              QMainWindow {
+                  background-color: #333;
+              }
+
+              QLabel {
+                  font-size: 16px;
+                  color: #fff;
+              }
+
+              QPushButton {
+                  background-color: #4CAF50;
+                  color: white;
+                  font-size: 14px;
+                  border: none;
+                  padding: 10px 15px;
+                  margin-top: 10px;
+              }
+              """)
+
+
+    def scrape_movies(self):
+        try:
+            if not self.movies:
+                options = Options()
+                options.headless = True
+                driver = webdriver.Chrome(options=options)
+                url = random.choice(r_url)
+                driver.get(url)
+                driver.implicitly_wait(10)
+
+                while True:
+                    if "captcha" in driver.current_url:
+                        time.sleep(5)
+                    else:
+                        break
+
+                soup = BeautifulSoup(driver.page_source, "html.parser")
+                movie_elements = soup.find_all(
+                    "span", {"class": "styles_mainTitle__IFQyZ styles_activeMovieTittle__kJdJj", "data-tid": "4502216a"}
+                )
+                poster_elements = soup.find_all(
+                    "img", {"class" : "styles_image__gRXvn styles_mediumSizeType__fPzdD image styles_root__DZigd", "data-tid": "d813cf42"}
+                )
+
+                self.movies = []
+                for movie_element, poster_element in zip(movie_elements, poster_elements):
+                    title = movie_element.text.strip()
+                    poster_url = f"https:{poster_element['src']}"
+                    self.movies.append((title, poster_url))
+                    self.db_manager.insert_movie(title, poster_url)
+                    time.sleep(1)
+
+                self.status_label.setText('Фильмы успешно перенесены и сохранены в базу данных')
+            else:
+                self.status_label.setText('Фильмы уже загруженны. Выберите случайный фильм')
+
+        except Exception as e:
+            self.status_label.setText(f'Произошла ошибка: {e}')
+        finally:
+            try:
+                driver.quit()
+            except NameError:
+                pass
+
+    def display_movie_poster(self, poster_url):
+        response = requests.get(poster_url)
+        pixmap = QPixmap()
+        pixmap.loadFromData(response.content)
+        scaled_pixmap = pixmap.scaled(200, 300, aspectRatioMode=Qt.KeepAspectRatio)
+        self.poster_label.setPixmap(scaled_pixmap)
+
+    def pick_random_movie(self):
+        try:
+            # Загружаем все фильмы из базы данных
+            if not self.movies:
+                self.movies = self.db_manager.get_all_movies()
+
+            if not self.movies:
+                self.status_label.setText('Нет доступных фильмов. Сперва перенесите их.')
+                return
+
+            random_movie = random.choice(self.movies)
+            title, poster_url = random_movie
+            self.display_movie_poster(poster_url)
+            self.status_label.setText(f'Случайно выбранный фильм: {title}')
+
+        except Exception as e:
+            self.status_label.setText(f'Произошла ошибка: {e}')
+
+            random_movie = random.choice(self.movies)
+            title, poster_url = random_movie
+            self.display_movie_poster(poster_url)
+            self.status_label.setText(f'Случайно выбранный фильм: {title}')
+
+        except Exception as e:
+            self.status_label.setText(f'Произошла ошибка: {e}')
+
+def run_app():
+    app = QApplication(sys.argv)
+    mainWin = MovieScraperApp()
+    mainWin.show() #pyinstaller backend.spec
+    sys.exit(app.exec_())
+
+if __name__ == '__main__':
+    run_app()
