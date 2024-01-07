@@ -1,6 +1,6 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QPushButton, QVBoxLayout, QWidget
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QPushButton, QVBoxLayout, QWidget, QRadioButton
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -8,7 +8,6 @@ import random
 import time
 import requests
 from PyQt5.QtGui import QPixmap
-from PyQt5.QtWidgets import QRadioButton
 import sqlite3
 
 r_url = (
@@ -23,7 +22,7 @@ r_url = (
 
 class DatabaseManager:
     def __init__(self, db_file="movies.db"):
-        self.conn = sqlite3.connect(db_file)
+        self.conn = sqlite3.connect(db_file, check_same_thread=False)
         self.create_table()
 
     def create_table(self):
@@ -53,13 +52,56 @@ class DatabaseManager:
         count = cursor.fetchone()[0]
         return count > 0
 
+class MovieScraperThread(QThread):
+    finished = pyqtSignal(list)
+
+    def __init__(self, db_manager):
+        super().__init__()
+        self.db_manager = db_manager
+
+    def run(self):
+        options = Options()
+        options.headless = True
+        driver = webdriver.Chrome(options=options)
+        url = random.choice(r_url)
+        driver.get(url)
+        driver.implicitly_wait(10)
+
+        while True:
+            if "captcha" in driver.current_url:
+                time.sleep(5)
+            else:
+                break
+
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        movie_elements = soup.find_all(
+            "span", {"class": "styles_mainTitle__IFQyZ styles_activeMovieTittle__kJdJj", "data-tid": "4502216a"}
+        )
+        poster_elements = soup.find_all(
+            "img", {"class": "styles_image__gRXvn styles_mediumSizeType__fPzdD image styles_root__DZigd",
+                    "data-tid": "d813cf42"}
+        )
+
+        new_movies = []
+        for movie_element, poster_element in zip(movie_elements, poster_elements):
+            title = movie_element.text.strip()
+            poster_url = f"https:{poster_element['src']}"
+
+            if not self.db_manager.movie_exists(title):
+                new_movies.append((title, poster_url))
+                self.db_manager.insert_movie(title, poster_url)
+                time.sleep(1)
+
+        self.finished.emit(new_movies)
+        driver.quit()
 
 class MovieScraperApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.db_manager = DatabaseManager()
+        self.movie_scraper_thread = MovieScraperThread(self.db_manager)
+        self.movie_scraper_thread.finished.connect(self.scrape_movies_finished)
         self.initUI()
-
 
     def initUI(self):
         self.setWindowTitle('Рандомайзер фильмов')
@@ -80,7 +122,7 @@ class MovieScraperApp(QMainWindow):
         self.movies = []
         self.light_theme_radio = QRadioButton('Светлая тема', self)
         self.dark_theme_radio = QRadioButton('Темная тема', self)
-        self.light_theme_radio.setChecked(True)  # Устанавливаем светлую тему по умолчанию
+        self.light_theme_radio.setChecked(True)
         self.light_theme_radio.toggled.connect(self.toggle_theme)
         self.dark_theme_radio.toggled.connect(self.toggle_theme)
 
@@ -156,57 +198,22 @@ class MovieScraperApp(QMainWindow):
               """)
 
     def scrape_movies(self):
-        try:
-            if not self.movies:
-                options = Options()
-                options.headless = True
-                driver = webdriver.Chrome(options=options)
-                url = random.choice(r_url)
-                driver.get(url)
-                driver.implicitly_wait(10)
+        if not self.movie_scraper_thread.isRunning():
+            self.movie_scraper_thread.start()
+            self.status_label.setText('Идет процесс переноса фильмов в базу данных. Пожалуйста, подождите...')
 
-                while True:
-                    if "captcha" in driver.current_url:
-                        time.sleep(5)
-                    else:
-                        break
+    def scrape_movies_finished(self, new_movies):
+        self.movies = new_movies
 
-                soup = BeautifulSoup(driver.page_source, "html.parser")
-                movie_elements = soup.find_all(
-                    "span", {"class": "styles_mainTitle__IFQyZ styles_activeMovieTittle__kJdJj", "data-tid": "4502216a"}
-                )
-                poster_elements = soup.find_all(
-                    "img", {"class": "styles_image__gRXvn styles_mediumSizeType__fPzdD image styles_root__DZigd",
-                            "data-tid": "d813cf42"}
-                )
+        if new_movies:
+            self.status_label.setText('Фильмы успешно перенесены и сохранены в базе данных')
+        else:
+            self.status_label.setText('Все фильмы уже есть в базе данных. Ничего не добавлено.')
 
-                new_movies = []
-                for movie_element, poster_element in zip(movie_elements, poster_elements):
-                    title = movie_element.text.strip()
-                    poster_url = f"https:{poster_element['src']}"
 
-                    # Проверка, есть ли фильм уже в базе данных
-                    if not self.db_manager.movie_exists(title):
-                        new_movies.append((title, poster_url))
-                        self.db_manager.insert_movie(title, poster_url)
-                        time.sleep(1)
-
-                self.movies = new_movies
-
-                if new_movies:
-                    self.status_label.setText('Фильмы успешно перенесены и сохранены в базе данных')
-                else:
-                    self.status_label.setText('Все фильмы уже есть в базе данных. Ничего не добавлено.')
-            else:
-                self.status_label.setText('Фильмы уже загружены. Выберите случайный фильм.')
-
-        except Exception as e:
-            self.status_label.setText(f'Произошла ошибка: {e}')
-        finally:
-            try:
-                driver.quit()
-            except NameError:
-                pass
+    def display_error(self, error_message):
+        self.status_label.setText(error_message)
+        self.movie_thread.quit()
 
     def display_movie_poster(self, poster_url):
         response = requests.get(poster_url)
@@ -216,36 +223,25 @@ class MovieScraperApp(QMainWindow):
         self.poster_label.setPixmap(scaled_pixmap)
 
     def pick_random_movie(self):
-        try:
-            # Загружаем все фильмы из базы данных
-            if not self.movies:
-                self.movies = self.db_manager.get_all_movies()
+        if not self.movies:
+            self.movies = self.db_manager.get_all_movies()
 
-            if not self.movies:
-                self.status_label.setText('Нет доступных фильмов. Сперва перенесите их.')
-                return
+        if not self.movies:
+            self.status_label.setText('Нет доступных фильмов. Сперва перенесите их.')
+            return
 
-            random_movie = random.choice(self.movies)
-            title, poster_url = random_movie
-            self.display_movie_poster(poster_url)
-            self.status_label.setText(f'Случайно выбранный фильм: {title}')
+        random_movie = random.choice(self.movies)
+        title, poster_url = random_movie
+        self.display_movie_poster(poster_url)
+        self.status_label.setText(f'Случайно выбранный фильм: {title}')
 
-        except Exception as e:
-            self.status_label.setText(f'Произошла ошибка: {e}')
-
-            random_movie = random.choice(self.movies)
-            title, poster_url = random_movie
-            self.display_movie_poster(poster_url)
-            self.status_label.setText(f'Случайно выбранный фильм: {title}')
-
-        except Exception as e:
-            self.status_label.setText(f'Произошла ошибка: {e}')
 
 def run_app():
     app = QApplication(sys.argv)
     mainWin = MovieScraperApp()
-    mainWin.show() #pyinstaller backend.spec
+    mainWin.show()
     sys.exit(app.exec_())
+
 
 if __name__ == '__main__':
     run_app()
