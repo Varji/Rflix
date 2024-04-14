@@ -1,58 +1,11 @@
-from PyQt5.QtWidgets import QMainWindow, QLabel, QPushButton, QVBoxLayout, QWidget, QRadioButton, QDialog, QLineEdit, QHBoxLayout, QMessageBox, QCheckBox
+from PyQt5.QtWidgets import QMainWindow, QLabel, QPushButton, QVBoxLayout, QWidget, QDialog, QLineEdit, QHBoxLayout, QMessageBox, QCheckBox, QRadioButton
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt
 from backend import DatabaseManager, MovieScraperThread
 import random
 import requests
-import time
-from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from PyQt5.QtCore import QThread, pyqtSignal, QSettings
-from backend import r_url
-
-class MovieScraperThread(QThread): #тестовый пуш гитхаба
-    finished = pyqtSignal(list)
-
-    def __init__(self, db_manager):
-        super().__init__()
-        self.db_manager = db_manager
-
-    def run(self):
-        options = Options()
-        options.headless = True
-        driver = webdriver.Chrome(options=options)
-        url = random.choice(r_url)
-        driver.get(url)
-        driver.implicitly_wait(10)
-
-        while True:
-            if "captcha" in driver.current_url:
-                time.sleep(5)
-            else:
-                break
-
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-        movie_elements = soup.find_all(
-            "span", {"class": "styles_mainTitle__IFQyZ styles_activeMovieTittle__kJdJj", "data-tid": "4502216a"}
-        )
-        poster_elements = soup.find_all(
-            "img", {"class": "styles_image__gRXvn styles_mediumSizeType__fPzdD image styles_root__DZigd",
-                    "data-tid": "d813cf42"}
-        )
-
-        new_movies = []
-        for movie_element, poster_element in zip(movie_elements, poster_elements):
-            title = movie_element.text.strip()
-            poster_url = f"https:{poster_element['src']}"
-
-            if not self.db_manager.movie_exists(title):
-                new_movies.append((title, poster_url))
-                self.db_manager.insert_movie(title, poster_url)
-                time.sleep(1)
-
-        self.finished.emit(new_movies)
-        driver.quit()
+from PyQt5.QtCore import pyqtSignal, QSettings, QPropertyAnimation, QRect
+import webbrowser
 
 class MovieScraperApp(QMainWindow):
     def __init__(self, db_manager, run_app_func):
@@ -61,6 +14,7 @@ class MovieScraperApp(QMainWindow):
         self.run_app_func = run_app_func
         self.movie_scraper_thread = MovieScraperThread(self.db_manager)
         self.initUI()
+        self.set_light_theme()
 
 
     def initUI(self):
@@ -80,6 +34,10 @@ class MovieScraperApp(QMainWindow):
         self.pick_random_button.clicked.connect(self.pick_random_movie)
         self.layout.addWidget(self.pick_random_button)
 
+        self.watch_online_button = QPushButton('Смотреть онлайн')
+        self.watch_online_button.clicked.connect(self.watch_online)
+        self.layout.addWidget(self.watch_online_button)
+        self.watch_online_button.hide()
         self.settings_button = QPushButton('Настройки')
         self.settings_button.clicked.connect(self.show_settings)
         self.layout.addWidget(self.settings_button)
@@ -92,23 +50,24 @@ class MovieScraperApp(QMainWindow):
 
         button_style = """
                    QPushButton {
-                       background-color: #4CAF50; /* Green background */
-                       color: white; /* White text */
+                       background-color: #4CAF50; 
+                       color: white; 
                        font-size: 14px;
                        border: none;
                        padding: 10px 15px;
                        margin-top: 10px;
-                       border-radius: 5px; /* Rounded corners */
+                       border-radius: 5px;
                    }
 
                    QPushButton:hover {
-                       background-color: #3e8e41; /* Darker green on hover */
+                       background-color: #3e8e41;
                    }
                """
 
         self.scrape_button.setStyleSheet(button_style)
         self.pick_random_button.setStyleSheet(button_style)
         self.settings_button.setStyleSheet(button_style)
+        self.watch_online_button.setStyleSheet(button_style)
 
     def reload_ui(self, reload):
         if reload:
@@ -122,16 +81,11 @@ class MovieScraperApp(QMainWindow):
     def close_app(self):
         self.close()
 
-    def toggle_theme(self):
-        if self.light_theme_radio.isChecked():
-            self.set_light_theme()
-        elif self.dark_theme_radio.isChecked():
-            self.set_dark_theme()
-
     def set_light_theme(self):
         self.setStyleSheet("""
             QMainWindow {
-                background-color: #f0f0f0;
+                background-color: 
+                f0f0f0;
             }
 
             QLabel {
@@ -170,6 +124,19 @@ class MovieScraperApp(QMainWindow):
             }
         """)
 
+    def toggle_theme(self):
+        settings_widget = self.centralWidget()
+        if settings_widget and isinstance(settings_widget, SettingsWidget):
+            if settings_widget.light_theme_radio.isChecked():
+                self.set_light_theme()
+            elif settings_widget.dark_theme_radio.isChecked():
+                self.set_dark_theme()
+
+    def show_settings(self):
+        settings_widget = SettingsWidget(self)
+        settings_widget.go_home_signal.connect(self.reload_ui)
+        settings_widget.change_theme_signal.connect(self.toggle_theme)
+        self.setCentralWidget(settings_widget)
     def scrape_movies(self):
         if not self.movie_scraper_thread.isRunning():
             self.movie_scraper_thread.start()
@@ -203,15 +170,34 @@ class MovieScraperApp(QMainWindow):
             return
 
         random_movie = random.choice(self.movies)
-        title, poster_url = random_movie
+        self.selected_title, self.selected_poster_url, self.selected_film_url = random_movie
+        title, poster_url, film_url = random_movie
         self.display_movie_poster(poster_url)
         self.status_label.setText(f'Случайно выбранный фильм: {title}')
+        self.watch_online_button.show()
+
+        self.selected_film_url = film_url
+
+    def watch_online(self):
+        if not self.selected_film_url:
+            self.status_label.setText('Нет доступных фильмов.')
+            return
+
+        if self.selected_film_url:
+
+            vip_film_url = self.selected_film_url.replace('kinopoisk.ru', 'kinopoisk.vip')
+            webbrowser.open(vip_film_url)
+            self.status_label.setText(f'Открытие фильма в браузере: {vip_film_url}')
+        else:
+            self.status_label.setText('Ссылка на фильм отсутствует.')
 
 class SettingsWidget(QWidget):
     go_home_signal = pyqtSignal(bool)
+    change_theme_signal = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setGeometry(0, parent.height(), parent.width(), parent.height())
         self.initUI()
 
     def initUI(self):
@@ -222,9 +208,34 @@ class SettingsWidget(QWidget):
 
         layout.addWidget(self.home_button)
 
+        self.light_theme_radio = QRadioButton('Светлая тема', self)
+        self.dark_theme_radio = QRadioButton('Темная тема', self)
+
+        layout.addWidget(self.light_theme_radio)
+        layout.addWidget(self.dark_theme_radio)
+
+        self.light_theme_radio.toggled.connect(self.toggle_theme)
+        self.dark_theme_radio.toggled.connect(self.toggle_theme)
+
     def go_home(self):
-        self.hide()
+        self.animation = QPropertyAnimation(self, b"geometry")
+        self.animation.setDuration(300)
+        self.animation.setStartValue(self.geometry())
+        self.animation.setEndValue(QRect(0, self.parent().height(), self.parent().width(), self.parent().height()))
+        self.animation.finished.connect(lambda: self.hide())
+        self.animation.start()
+
         self.go_home_signal.emit(True)
+
+    def showEvent(self, event):
+        self.animation = QPropertyAnimation(self, b"geometry")
+        self.animation.setDuration(300)
+        self.animation.setStartValue(QRect(self.parent().width(), 0, self.parent().width(), self.parent().height()))
+        self.animation.setEndValue(QRect(0, 0, self.parent().width(), self.parent().height()))
+        self.animation.start()
+
+    def toggle_theme(self):
+        self.change_theme_signal.emit()
 
 class LoginDialog(QDialog):
     def set_style(self):
@@ -323,11 +334,17 @@ class LoginDialog(QDialog):
         username = self.username_edit.text()
         password = self.password_edit.text()
 
+        if not username or not password:
+            QMessageBox.warning(self, 'Ошибка', 'Пожалуйста, введите имя пользователя и пароль.')
+            return
+
+        if self.db_manager.user_exists(username):
+            QMessageBox.warning(self, 'Ошибка', 'Такой пользователь уже существует.')
+            return
+
         if not self.db_manager.register_user(username, password):
             QMessageBox.warning(self, 'Ошибка', 'Не удалось зарегистрироваться.')
             return
 
         QMessageBox.information(self, 'Успех', 'Пользователь успешно зарегистрирован.')
         self.accept()
-
-

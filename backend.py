@@ -1,7 +1,6 @@
 import sqlite3
 import time
 import random
-import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -29,7 +28,8 @@ class DatabaseManager:
                CREATE TABLE IF NOT EXISTS movies (
                    id INTEGER PRIMARY KEY AUTOINCREMENT,
                    title TEXT,
-                   poster_url TEXT
+                   poster_url TEXT,
+                   film_url TEXT
                )
            ''')
         self.conn.commit()
@@ -45,14 +45,15 @@ class DatabaseManager:
            ''')
         self.conn.commit()
 
-    def insert_movie(self, title, poster_url):
+    def insert_movie(self, title, poster_url, film_url):
         cursor = self.conn.cursor()
-        cursor.execute('INSERT INTO movies (title, poster_url) VALUES (?, ?)', (title, poster_url))
+        cursor.execute('INSERT INTO movies (title, poster_url, film_url) VALUES (?, ?, ?)',
+                       (title, poster_url, film_url))
         self.conn.commit()
 
     def get_all_movies(self):
         cursor = self.conn.cursor()
-        cursor.execute('SELECT title, poster_url FROM movies')
+        cursor.execute('SELECT title, poster_url, film_url FROM movies')
         return cursor.fetchall()
 
     def movie_exists(self, title):
@@ -89,8 +90,8 @@ class DatabaseManager:
 class MovieScraperThread(QThread):
     finished = pyqtSignal(list)
 
-    def __init__(self, db_manager, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, db_manager):
+        super().__init__()
         self.db_manager = db_manager
 
     def run(self):
@@ -108,23 +109,30 @@ class MovieScraperThread(QThread):
                 break
 
         soup = BeautifulSoup(driver.page_source, "html.parser")
+
         movie_elements = soup.find_all(
             "span", {"class": "styles_mainTitle__IFQyZ styles_activeMovieTittle__kJdJj", "data-tid": "4502216a"}
         )
+
         poster_elements = soup.find_all(
-            "img", {"class": "styles_image__gRXvn styles_mediumSizeType__fPzdD image styles_root__DZigd",
-                    "data-tid": "d813cf42"}
+            "img", {"class": "styles_image__gRXvn styles_mediumSizeType__fPzdD image styles_root__DZigd","data-tid": "d813cf42"}
+        )
+        film_url_elements = soup.find_all(
+            "a", {"class": "base-movie-main-info_link__YwtP1", "data-tid":"d4e8d214"}
         )
 
         new_movies = []
-        for movie_element, poster_element in zip(movie_elements, poster_elements):
+        for movie_element, poster_element, film_url_element in zip(movie_elements, poster_elements, film_url_elements):
             title = movie_element.text.strip()
             poster_url = f"https:{poster_element['src']}"
+            film_url = film_url_element['href']
 
-            if not self.db_manager.movie_exists(title):
-                new_movies.append((title, poster_url))
-                self.db_manager.insert_movie(title, poster_url)
+            if not self.db_manager.movie_exists(title) and film_url.startswith("/film/"):
+                film_url = f"https://www.kinopoisk.ru{film_url}"
+                new_movies.append((title, poster_url, film_url))
+                self.db_manager.insert_movie(title, poster_url, film_url)
                 time.sleep(1)
 
         self.finished.emit(new_movies)
         driver.quit()
+
