@@ -11,7 +11,7 @@ from selenium.webdriver.chrome.options import Options
 from PyQt5.QtCore import QThread, pyqtSignal, QSettings
 from backend import r_url
 
-class MovieScraperThread(QThread):
+class MovieScraperThread(QThread): #тестовый пуш гитхаба
     finished = pyqtSignal(list)
 
     def __init__(self, db_manager):
