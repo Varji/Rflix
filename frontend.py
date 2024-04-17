@@ -85,7 +85,7 @@ class MovieScraperApp(QMainWindow):
         self.setStyleSheet("""
             QMainWindow {
                 background-color: 
-                f0f0f0;
+                #f0f0f0;
             }
 
             QLabel {
@@ -124,13 +124,39 @@ class MovieScraperApp(QMainWindow):
             }
         """)
 
+    def set_black_theme(self):
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #000;
+            }
+
+            QLabel {
+                font-size: 16px;
+                color: #f0f0f0; /* белый цвет текста */
+            }
+
+            QPushButton {
+                background-color: #4CAF50;
+                color: #fff; /* белый цвет текста */
+                font-size: 14px;
+                border: none;
+                padding: 10px 15px;
+                margin-top: 10px;
+            }
+        """)
+
     def toggle_theme(self):
         settings_widget = self.centralWidget()
         if settings_widget and isinstance(settings_widget, SettingsWidget):
             if settings_widget.light_theme_radio.isChecked():
                 self.set_light_theme()
+                settings_widget.set_text_color("#333")  # Темный текст для светлой темы
             elif settings_widget.dark_theme_radio.isChecked():
                 self.set_dark_theme()
+                settings_widget.set_text_color("#fff")  # Белый текст для темной темы
+            elif settings_widget.black_theme_radio.isChecked():
+                self.set_black_theme()
+                settings_widget.set_text_color("#fff")  # Белый текст для черной темы
 
     def show_settings(self):
         settings_widget = SettingsWidget(self)
@@ -210,12 +236,15 @@ class SettingsWidget(QWidget):
 
         self.light_theme_radio = QRadioButton('Светлая тема', self)
         self.dark_theme_radio = QRadioButton('Темная тема', self)
+        self.black_theme_radio = QRadioButton('Черная тема', self)  # Добавлено
 
         layout.addWidget(self.light_theme_radio)
         layout.addWidget(self.dark_theme_radio)
+        layout.addWidget(self.black_theme_radio)  # Добавлено
 
         self.light_theme_radio.toggled.connect(self.toggle_theme)
         self.dark_theme_radio.toggled.connect(self.toggle_theme)
+        self.black_theme_radio.toggled.connect(self.toggle_theme)  # Добавлено
 
     def go_home(self):
         self.animation = QPropertyAnimation(self, b"geometry")
@@ -236,6 +265,13 @@ class SettingsWidget(QWidget):
 
     def toggle_theme(self):
         self.change_theme_signal.emit()
+
+    def set_text_color(self, color):
+        self.home_button.setStyleSheet(f"color: {color};")
+        self.light_theme_radio.setStyleSheet(f"color: {color};")
+        self.dark_theme_radio.setStyleSheet(f"color: {color};")
+        self.black_theme_radio.setStyleSheet(f"color: {color};")
+
 
 class LoginDialog(QDialog):
     def set_style(self):
