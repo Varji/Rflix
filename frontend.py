@@ -132,12 +132,12 @@ class MovieScraperApp(QMainWindow):
 
             QLabel {
                 font-size: 16px;
-                color: #f0f0f0; /* белый цвет текста */
+                color: #f0f0f0;
             }
 
             QPushButton {
                 background-color: #4CAF50;
-                color: #fff; /* белый цвет текста */
+                color: #fff;
                 font-size: 14px;
                 border: none;
                 padding: 10px 15px;
@@ -150,13 +150,13 @@ class MovieScraperApp(QMainWindow):
         if settings_widget and isinstance(settings_widget, SettingsWidget):
             if settings_widget.light_theme_radio.isChecked():
                 self.set_light_theme()
-                settings_widget.set_text_color("#333")  # Темный текст для светлой темы
+                settings_widget.set_text_color("#333")
             elif settings_widget.dark_theme_radio.isChecked():
                 self.set_dark_theme()
-                settings_widget.set_text_color("#fff")  # Белый текст для темной темы
+                settings_widget.set_text_color("#fff")
             elif settings_widget.black_theme_radio.isChecked():
                 self.set_black_theme()
-                settings_widget.set_text_color("#fff")  # Белый текст для черной темы
+                settings_widget.set_text_color("#fff")
 
     def show_settings(self):
         settings_widget = SettingsWidget(self)
@@ -236,15 +236,15 @@ class SettingsWidget(QWidget):
 
         self.light_theme_radio = QRadioButton('Светлая тема', self)
         self.dark_theme_radio = QRadioButton('Темная тема', self)
-        self.black_theme_radio = QRadioButton('Черная тема', self)  # Добавлено
+        self.black_theme_radio = QRadioButton('Черная тема', self)
 
         layout.addWidget(self.light_theme_radio)
         layout.addWidget(self.dark_theme_radio)
-        layout.addWidget(self.black_theme_radio)  # Добавлено
+        layout.addWidget(self.black_theme_radio)
 
         self.light_theme_radio.toggled.connect(self.toggle_theme)
         self.dark_theme_radio.toggled.connect(self.toggle_theme)
-        self.black_theme_radio.toggled.connect(self.toggle_theme)  # Добавлено
+        self.black_theme_radio.toggled.connect(self.toggle_theme)
 
     def go_home(self):
         self.animation = QPropertyAnimation(self, b"geometry")

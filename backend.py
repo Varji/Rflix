@@ -13,7 +13,10 @@ r_url = (
     "https://www.kinopoisk.ru/lists/movies/top500/?page=4",
     "https://www.kinopoisk.ru/lists/movies/popular-films/",
     "https://www.kinopoisk.ru/lists/movies/popular-films/?page=2",
-    "https://www.kinopoisk.ru/lists/movies/popular-films/?page=3"
+    "https://www.kinopoisk.ru/lists/movies/popular-films/?page=3",
+    "https://www.kinopoisk.ru/lists/movies/popular-films/?page=4",
+    "https://www.kinopoisk.ru/lists/movies/popular-films/?page=5",
+    "https://www.kinopoisk.ru/lists/movies/popular-films/?page=6",
 )
 
 class DatabaseManager:
